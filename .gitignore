@@ -1,0 +1,27 @@
+# === Rust 构建产物 ===
+/target/
+**/*.rs.bk
+*.pdb
+
+# === 编辑器 / OS ===
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
+
+# === tba / agent 产物（不属于 mewway 项目本身）===
+.tba/
+tba.cmd
+AGENTS.md
+
+# === WorkBuddy 记忆 ===
+.workbuddy-ai/
+
+# === 杂物 / 源素材（非发布所需）===
+logo1.ico
+logo2.png
+logo_orin.png
+logo_png/
+容器 2 (12) - 副本.png
