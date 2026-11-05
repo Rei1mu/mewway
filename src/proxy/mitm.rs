@@ -21,9 +21,15 @@ pub struct Mitm {
 }
 
 impl Mitm {
-    pub fn new(ca: Arc<Ca>) -> Self {
+    pub fn new(ca: Arc<Ca>, port: u16) -> Self {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let resolver = Arc::new(CertResolver { ca, cache: Mutex::new(HashMap::new()) });
+        // 叶子证书里的 CRL Distribution Point 指向本代理暴露的 CRL 端点。
+        let crl_url = format!("http://127.0.0.1:{port}/mewway.crl");
+        let resolver = Arc::new(CertResolver {
+            ca,
+            cache: Mutex::new(HashMap::new()),
+            crl_url,
+        });
         let mut cfg = ServerConfig::builder().with_no_client_auth().with_cert_resolver(resolver);
         // 只谈 HTTP/1.1，避免 h2 帧解析的复杂度
         cfg.alpn_protocols = vec![b"http/1.1".to_vec()];
@@ -115,6 +121,7 @@ impl Mitm {
 struct CertResolver {
     ca: Arc<Ca>,
     cache: Mutex<HashMap<String, Arc<CertifiedKey>>>,
+    crl_url: String,
 }
 
 impl std::fmt::Debug for CertResolver {
@@ -131,7 +138,7 @@ impl ResolvesServerCert for CertResolver {
                 return Some(ck.clone());
             }
         }
-        match self.ca.leaf(&name) {
+        match self.ca.leaf(&name, &self.crl_url) {
             Ok(ck) => {
                 let ck = Arc::new(ck);
                 if let Ok(mut g) = self.cache.lock() {

@@ -27,6 +27,8 @@ pub struct Ctx {
     pub resolver: Arc<resolver::Resolver>,
     /// 「这个域名能不能加速」的探测表
     pub probes: Arc<probe::Probes>,
+    /// 本地 CA（签发叶子证书 + 提供 CRL），CRL 端点 /mewway.crl 需要读它
+    pub ca: Arc<ca::Ca>,
     pub mitm: mitm::Mitm,
     /// 直连客户端：加速/镜像用
     pub http: reqwest::Client,
@@ -69,8 +71,17 @@ impl Ctx {
         let http_upstream = RwLock::new(upstream_client(&cfg));
         let resolver = Arc::new(resolver::Resolver::new(shared.clone(), cfg.doh.clone()));
         let probes = Arc::new(probe::Probes::new(shared.clone(), tx.clone()));
-        let mitm = mitm::Mitm::new(ca.clone());
-        Ok(Arc::new(Self { cfg: RwLock::new(cfg), shared, resolver, probes, mitm, http, http_upstream }))
+        let mitm = mitm::Mitm::new(ca.clone(), cfg.port);
+        Ok(Arc::new(Self {
+            cfg: RwLock::new(cfg),
+            shared,
+            resolver,
+            probes,
+            ca,
+            mitm,
+            http,
+            http_upstream,
+        }))
     }
 
     pub fn settings(&self) -> Arc<Settings> {

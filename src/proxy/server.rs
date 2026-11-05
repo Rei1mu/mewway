@@ -82,10 +82,28 @@ async fn handle(req: Request<Incoming>, ctx: Arc<Ctx>) -> Response<ResBody> {
     if req.uri().path() == "/pac" {
         return pac_response(&ctx);
     }
+    // 本地 CA 签发的 CRL。Windows 原生 TLS 栈（schannel / .NET / GCM）会对自定义根 CA
+    // 做强制吊销检查，叶子证书里指向这个地址；这里直接把 DER 返回，让它查到「未吊销」，
+    // 否则 git / GitHub 身份验证会在 TLS 握手阶段因 CRYPT_E_NO_REVOCATION_CHECK 失败。
+    // 注意：这条请求也不记进连接列表、不打日志（Windows 会高频拉取）。
+    if req.uri().path() == "/mewway.crl" {
+        return crl_response(&ctx);
+    }
     if req.method() == Method::CONNECT {
         return connect(req, ctx).await;
     }
     plain_http(req, ctx).await
+}
+
+/// 返回本地 CA 签发的 CRL（DER 编码，content-type 用 PKIX CRL）。
+fn crl_response(ctx: &Ctx) -> Response<ResBody> {
+    let der = ctx.ca.crl_der().to_vec();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/pkix-crl")
+        .header("cache-control", "no-store, no-cache, must-revalidate")
+        .body(forward::body_from_bytes(der))
+        .unwrap_or_else(|_| forward::text(StatusCode::INTERNAL_SERVER_ERROR, "CRL 生成失败"))
 }
 
 /// 把当前规则渲染成 PAC 返回给浏览器。
@@ -114,12 +132,11 @@ fn resolve_route(ctx: &Ctx, host: &str, port: u16) -> rules::Decision {
     let mut dec = rules::decide(&cfg.sites, host);
     let has_upstream = cfg.upstream_addr().is_some();
     let ca_ok = ctx.shared.ca_installed.load(Ordering::Relaxed) || std::env::var("MEWWAY_FORCE_MITM").is_ok();
-    let ca_checked = ctx.shared.ca_checked.load(Ordering::Relaxed);
 
-    // 需要本地 CA 的策略：证书没装就别硬上，否则浏览器直接报证书错误。
-    // 注意只在「检测完了、确实没装」时降级 —— 检测还没回来就按规则来，
-    // 否则程序刚起来那几百毫秒里，中继规则会被塞给用户的上游代理。
-    if matches!(dec.route, Route::Mirror(_) | Route::Relay) && ca_checked && !ca_ok {
+    // 需要本地 CA 的策略：只要 CA 还没确认装好（包括「检测还没回来」的窗口）就别硬上，
+    // 否则客户端会拿到未受信的证书、握手偶发失败。CA 就绪后立刻恢复正常策略，
+    // 启动期那几百毫秒最多只是中继先走隧道/上游，比证书错误安全得多。
+    if matches!(dec.route, Route::Mirror(_) | Route::Relay) && !ca_ok {
         dec.route = if has_upstream { Route::Upstream } else { Route::Tunnel };
         return dec;
     }

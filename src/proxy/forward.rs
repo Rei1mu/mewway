@@ -21,6 +21,11 @@ pub fn body_from(msg: impl Into<String>) -> ResBody {
     Full::new(Bytes::from(msg.into())).map_err(|e| -> BoxError { match e {} }).boxed_unsync()
 }
 
+/// 一段二进制 body（CRL 这类 DER 字节直接用这个）
+pub fn body_from_bytes(b: impl Into<Bytes>) -> ResBody {
+    Full::new(b.into()).map_err(|e| -> BoxError { match e {} }).boxed_unsync()
+}
+
 pub fn text(status: StatusCode, msg: impl Into<String>) -> Response<ResBody> {
     let body = Full::new(Bytes::from(msg.into())).map_err(|e| -> BoxError { match e {} }).boxed_unsync();
     Response::builder()
