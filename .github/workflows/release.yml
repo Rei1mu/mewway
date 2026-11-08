@@ -1,6 +1,6 @@
 name: release
 
-# 打 v* tag 自动构建；手动触发只出 artifact，不发 Release。
+# 打 v* tag 自动构建并发布；手动触发只出 artifact，不发 Release。
 on:
   push:
     tags: ["v*"]
@@ -49,12 +49,33 @@ jobs:
       - name: 编译
         run: cargo build --release --locked --target ${{ matrix.target }}
 
-      - name: 打包
+      - name: 准备 Inno Setup (ISCC)
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $iscc) {
+            Write-Host "未检测到 Inno Setup，开始安装 6.5.0 ..."
+            curl.exe -OL https://files.jrsoftware.org/is/6/innosetup-6.5.0.exe
+            Start-Process -FilePath ".\innosetup-6.5.0.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+            $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $iscc) { throw "找不到 ISCC.exe，安装失败" }
+          Write-Host "ISCC: $($iscc.FullName)"
+          "$(Split-Path $iscc.FullName -Parent)" >> $env:GITHUB_PATH
+
+      - name: 打包安装器（setup.exe）
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path "target/${{ matrix.target }}/release/mewway.exe" `
-            -DestinationPath "dist/mewway-${{ steps.ver.outputs.version }}-${{ matrix.arch }}.zip"
+          iscc installer/mewway.iss `
+            /DArch=${{ matrix.arch }} `
+            /DVersion=${{ steps.ver.outputs.version }} `
+            /DExePath=target/${{ matrix.target }}/release/mewway.exe `
+            /Odist
+          Get-ChildItem dist
 
       - uses: actions/upload-artifact@v4
         with:
@@ -74,6 +95,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: dist/*.exe
           fail_on_unmatched_files: true
           generate_release_notes: true
