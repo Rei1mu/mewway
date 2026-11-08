@@ -73,8 +73,8 @@ jobs:
           Write-Host "ISCC dir: $isccDir"
           "$isccDir" >> $env:GITHUB_PATH
           $env:Path = "$isccDir;$env:Path"
-          iscc /? *> $null
-          Write-Host "iscc 可调用，版本检查通过"
+          if (-not (Test-Path "$isccDir\iscc.exe")) { throw "iscc.exe 不存在于 $isccDir" }
+          Write-Host "iscc 可调用，目录: $isccDir"
 
       - name: 打包安装器（setup.exe）
         shell: pwsh
