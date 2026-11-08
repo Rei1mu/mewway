@@ -54,20 +54,22 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $isccDir = $null
-          # 1) 优先用已在 PATH 上的 iscc（部分 runner 镜像已预装）
-          $cmd = Get-Command iscc -ErrorAction SilentlyContinue
-          if ($cmd) { $isccDir = Split-Path $cmd.Path -Parent }
-          # 2) 常见安装目录兜底
+          # 1) 优先使用 runner 镜像自带的 6.7.1 安装（支持 OutputArchitectures / arm64 原生 setup）
+          $cands = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          )
+          foreach ($p in $cands) { if (Test-Path $p) { $isccDir = Split-Path $p -Parent; break } }
+          # 2) 回退：PATH 上的 iscc
           if (-not $isccDir) {
-            $file = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($file) { $isccDir = $file.DirectoryName }
+            $cmd = Get-Command iscc -ErrorAction SilentlyContinue
+            if ($cmd) { $isccDir = Split-Path $cmd.Path -Parent }
           }
-          # 3) 仍缺失则用 choco 安装（GitHub Windows runner 自带 choco）
+          # 3) 仍缺失则用 choco 安装
           if (-not $isccDir) {
             Write-Host "未检测到 Inno Setup，尝试 choco 安装 ..."
             choco install innosetup -y --no-progress
-            $file = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($file) { $isccDir = $file.DirectoryName }
+            foreach ($p in $cands) { if (Test-Path $p) { $isccDir = Split-Path $p -Parent; break } }
           }
           if (-not $isccDir) { throw "Inno Setup ISCC 未找到，安装失败" }
           Write-Host "ISCC dir: $isccDir"

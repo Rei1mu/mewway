@@ -19,9 +19,9 @@ AppPublisher=mewway
 AppCopyright=Copyright (C) 2026 mewwway
 DefaultDirName={autopf}\mewway
 DefaultGroupName=mewway
-; 单架构安装器：打包对应架构的 mewwway.exe，并以 64 位模式安装到 Program Files。
-; 注：setup.exe 自身位数由 Inno Setup 版本决定；本 CI 用的 6.x(<6.4) 出的是 x64 载体，
-; 在 ARM64 机器上以模拟方式运行，但安装进去的 mewwway.exe 是原生 ARM64 二进制。
+; 单架构安装器：setup.exe 自身即为该架构原生二进制（x64 或 arm64，由 OutputArchitectures 决定），
+; 并以 64 位模式把对应架构的 mewwway.exe 安装到 Program Files。
+OutputArchitectures={#Arch}
 ArchitecturesInstallIn64BitMode={#Arch}
 OutputBaseFilename=mewway-{#Version}-{#Arch}-setup
 Compression=lzma2/ultra64
@@ -34,7 +34,6 @@ CreateAppDir=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Files]
 Source: "{#ExePath}"; DestDir: "{app}"; Flags: ignoreversion
