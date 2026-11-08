@@ -1,49 +1,65 @@
-; mewwway 安装脚本（Inno Setup 6.4+）
+; mewwway 安装包脚本（Inno Setup 6）。
+; 由 .github/workflows/release.yml 调用 iscc，用 /D 传入版本号与架构。
 ;
-; 通过 ISCC 命令行参数化，CI 中每个架构单独编译出一个原生安装器：
-;   /DArch=x64|arm64       安装器自身架构（对应 OutputArchitectures，决定 setup.exe 是 x64 还是 arm64 原生）
-;   /DVersion=<semver>     版本号（取自 git tag，例如 0.1.0）
-;   /DExePath=<path>       要打包的可执行文件 mewwway.exe 的绝对/相对路径
+; 架构处理沿用 teambition-agent-orchestrator 的成熟做法：
+;   不依赖 OutputArchitectures（需 6.4+，CI 版本行为不稳），改用
+;   ArchitecturesAllowed + ArchitecturesInstallIn64BitMode 配合矩阵里的 InnoArch，
+;   每个架构单独编出一个安装器（x64 / arm64 各一个）。
 ;
-; 用法示例：
-;   iscc installer/mewway.iss /DArch=x64 /DVersion=0.1.0 /DExePath=target/x86_64-pc-windows-msvc/release/mewway.exe /Odist
-;
-; 注意：OutputArchitectures=arm64 需要 Inno Setup 6.4.0 及以上。
+; 中文语言文件 ChineseSimplified.isl 随仓库走（installer/ 下），不依赖 CI 环境。
+
+#ifndef AppVersion
+  #define AppVersion "0.1.0"
+#endif
+#ifndef TargetArch
+  #define TargetArch "x64"
+#endif
+#ifndef InnoArch
+  #define InnoArch "x64compatible"
+#endif
+#ifndef SrcExe
+  #define SrcExe "..\target\release\mewway.exe"
+#endif
+#ifndef OutDir
+  #define OutDir "..\dist"
+#endif
 
 [Setup]
-; 固定 GUID 标识本应用，保证升级/卸载正确关联（请勿随意更改）
+; AppId 固定不变，升级时才能覆盖安装而不是装成两份。
 AppId=c0cabde7-0c88-429a-8d9d-bd2f6060bfd0
 AppName=mewway
-AppVersion={#Version}
+AppVerName=mewway {#AppVersion}
+AppVersion={#AppVersion}
 AppPublisher=mewway
-AppCopyright=Copyright (C) 2026 mewwway
+AppPublisherURL=https://github.com/Rei1mu/mewway
+; 系统级代理工具通常需要管理员权限（设置系统代理 / 绑定特权端口）。
 DefaultDirName={autopf}\mewway
 DefaultGroupName=mewway
-; 单架构安装器：setup.exe 自身即为该架构原生二进制（x64 或 arm64，由 OutputArchitectures 决定），
-; 并以 64 位模式把对应架构的 mewwway.exe 安装到 Program Files。
-OutputArchitectures={#Arch}
-ArchitecturesInstallIn64BitMode={#Arch}
-OutputBaseFilename=mewway-{#Version}-{#Arch}-setup
+PrivilegesRequired=admin
+OutputDir={#OutDir}
+OutputBaseFilename=mewway-{#AppVersion}-{#TargetArch}-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-; 系统级代理工具通常需要管理员权限（设置系统代理 / 绑定特权端口）
-PrivilegesRequired=admin
-UninstallDisplayName=mewway {#Version} ({#Arch})
-CreateAppDir=yes
+ArchitecturesAllowed={#InnoArch}
+ArchitecturesInstallIn64BitMode={#InnoArch}
+UninstallDisplayIcon={app}\mewway.exe
+MinVersion=10.0
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+; 中文放第一个 = 安装界面默认中文；英文留给非中文用户。
+Name: "zh"; MessagesFile: "ChineseSimplified.isl"
+Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "{#ExePath}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SrcExe}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\mewway"; Filename: "{app}\mewway.exe"
 Name: "{autodesktop}\mewway"; Filename: "{app}\mewway.exe"; Tasks: desktopicon
 
 [Tasks]
-Name: desktopicon; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"
+Name: desktopicon; Description: "创建桌面快捷方式"; GroupDescription: "附加选项:"
 
 [Run]
 Filename: "{app}\mewway.exe"; Description: "启动 mewwway"; Flags: nowait postinstall skipifsilent

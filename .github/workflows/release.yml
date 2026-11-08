@@ -1,6 +1,6 @@
 name: release
 
-# 打 v* tag 自动构建并发布；手动触发只出 artifact，不发 Release。
+# 打 v* tag 自动出两个安装包；手动触发只构建、不上传 Release。
 on:
   push:
     tags: ["v*"]
@@ -17,12 +17,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # x64 用 runner 本机工具链；arm64 在 x64 runner 上交叉编译（VS 自带 ARM64 工具）。
+          # x64 用本机工具链；arm64 在 x64 runner 上交叉编译（VS 自带 ARM64 工具）。
           # 不用 windows-11-arm runner：私有仓库拿不到，公开仓库也常排队。
           - target: x86_64-pc-windows-msvc
             arch: x64
+            inno: x64compatible
           - target: aarch64-pc-windows-msvc
             arch: arm64
+            inno: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -49,50 +51,22 @@ jobs:
       - name: 编译
         run: cargo build --release --locked --target ${{ matrix.target }}
 
-      - name: 准备 Inno Setup (ISCC)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $isccDir = $null
-          # 1) 优先使用 runner 镜像自带的 6.7.1 安装（支持 OutputArchitectures / arm64 原生 setup）
-          $cands = @(
-            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-            "C:\Program Files\Inno Setup 6\ISCC.exe"
-          )
-          foreach ($p in $cands) { if (Test-Path $p) { $isccDir = Split-Path $p -Parent; break } }
-          # 2) 回退：PATH 上的 iscc
-          if (-not $isccDir) {
-            $cmd = Get-Command iscc -ErrorAction SilentlyContinue
-            if ($cmd) { $isccDir = Split-Path $cmd.Path -Parent }
-          }
-          # 3) 仍缺失则用 choco 安装
-          if (-not $isccDir) {
-            Write-Host "未检测到 Inno Setup，尝试 choco 安装 ..."
-            choco install innosetup -y --no-progress
-            foreach ($p in $cands) { if (Test-Path $p) { $isccDir = Split-Path $p -Parent; break } }
-          }
-          if (-not $isccDir) { throw "Inno Setup ISCC 未找到，安装失败" }
-          Write-Host "ISCC dir: $isccDir"
-          "$isccDir" >> $env:GITHUB_PATH
-          $env:Path = "$isccDir;$env:Path"
-          if (-not (Test-Path "$isccDir\iscc.exe")) { throw "iscc.exe 不存在于 $isccDir" }
-          Write-Host "iscc 可调用，目录: $isccDir"
+      - name: 装 Inno Setup
+        run: choco install innosetup --no-progress -y
 
-      - name: 打包安装器（setup.exe）
+      - name: 打 setup.exe
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          iscc installer/mewway.iss `
-            /DArch=${{ matrix.arch }} `
-            /DVersion=${{ steps.ver.outputs.version }} `
-            /DExePath=target/${{ matrix.target }}/release/mewway.exe `
-            /Odist
-          Get-ChildItem dist
+          iscc "/DAppVersion=${{ steps.ver.outputs.version }}" `
+               "/DTargetArch=${{ matrix.arch }}" `
+               "/DInnoArch=${{ matrix.inno }}" `
+               "/DSrcExe=..\target\${{ matrix.target }}\release\mewway.exe" `
+               "installer\mewway.iss"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: bin-${{ matrix.arch }}
-          path: dist/*
+          name: setup-${{ matrix.arch }}
+          path: dist/*.exe
           if-no-files-found: error
 
   release:
